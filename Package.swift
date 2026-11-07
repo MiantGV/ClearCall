@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "EchoRecorder",
+    name: "ClearCall",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "EchoRecorder",
-            path: "Sources/EchoRecorder",
+            name: "ClearCall",
+            path: "Sources/ClearCall",
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("AVFoundation"),

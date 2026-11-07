@@ -1,4 +1,4 @@
-# Echo Recorder
+# ClearCall
 
 A small macOS menu-bar app that records calls (any app: WhatsApp, Teams, Zoom, browsers) into **one audio file**, with the echo of the call removed from the microphone so you can use speakers instead of headphones.
 
@@ -13,6 +13,6 @@ A small macOS menu-bar app that records calls (any app: WhatsApp, Teams, Zoom, b
 
 ## Building
 
-GitHub Actions builds every push to `main` on a macOS runner and publishes a release with `Echo-Recorder-<version>.zip`.
+GitHub Actions builds every push to `main` on a macOS runner and publishes a release with `ClearCall-<version>.zip`.
 
 Locally: `scripts/build-app.sh <version> <build>` (needs Xcode or the Command Line Tools).

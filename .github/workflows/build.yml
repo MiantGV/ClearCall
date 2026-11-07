@@ -31,7 +31,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "v$VERSION" "dist/Echo-Recorder-$VERSION.zip" \
-            --title "Echo Recorder $VERSION" \
-            --notes "Download the zip, unzip it and move Echo Recorder to Applications. Commit: ${{ github.sha }}" \
+          gh release create "v$VERSION" "dist/ClearCall-$VERSION.zip" \
+            --title "ClearCall $VERSION" \
+            --notes "Download the zip, unzip it and move ClearCall to Applications. Commit: ${{ github.sha }}" \
             --target "${{ github.sha }}"

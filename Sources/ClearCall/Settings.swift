@@ -84,7 +84,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section {
-                Text("Echo Recorder \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
+                Text("ClearCall \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

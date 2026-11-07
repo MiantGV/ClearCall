@@ -24,7 +24,7 @@ final class SystemAudioCapture {
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
-    private let ioQueue = DispatchQueue(label: "echo-recorder.system-audio", qos: .userInteractive)
+    private let ioQueue = DispatchQueue(label: "clearcall.system-audio", qos: .userInteractive)
 
     func start(handler: @escaping ChunkHandler) throws {
         // 1. A global tap of every app's audio (we play nothing ourselves).
@@ -40,7 +40,7 @@ final class SystemAudioCapture {
         // 2. A private aggregate device that hosts the tap, clocked by the current output device.
         let outputUID = try Self.defaultOutputDeviceUID()
         let aggregate: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "Echo Recorder Capture",
+            kAudioAggregateDeviceNameKey: "ClearCall Capture",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
             kAudioAggregateDeviceMainSubDeviceKey: outputUID,
             kAudioAggregateDeviceIsPrivateKey: true,

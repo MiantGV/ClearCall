@@ -21,7 +21,7 @@ struct RecordingResult {
 final class Recorder {
     private let mic = MicCapture()
     private let system = SystemAudioCapture()
-    private let queue = DispatchQueue(label: "echo-recorder.process", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "clearcall.process", qos: .userInitiated)
 
     // Everything below is only touched on `queue`.
     private var startHost: UInt64 = 0
@@ -163,7 +163,7 @@ final class Recorder {
         samples.withUnsafeBufferPointer { src in
             buffer.floatChannelData![0].update(from: src.baseAddress!, count: samples.count)
         }
-        do { try file.write(from: buffer) } catch { NSLog("Echo Recorder: write failed: \(error)") }
+        do { try file.write(from: buffer) } catch { NSLog("ClearCall: write failed: \(error)") }
     }
 
     private func softClip(_ x: Float) -> Float {

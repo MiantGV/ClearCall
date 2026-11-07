@@ -43,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(item("Open Recordings Folder", #selector(openFolder)))
         menu.addItem(item("Settings…", #selector(openSettings), key: ","))
         menu.addItem(.separator())
-        menu.addItem(item("Quit Echo Recorder", #selector(quit), key: "q"))
+        menu.addItem(item("Quit ClearCall", #selector(quit), key: "q"))
     }
 
     private func item(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
@@ -63,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             guard granted else {
                 self.showAlert("Microphone access is off",
-                               "Allow Echo Recorder in System Settings → Privacy & Security → Microphone, then try again.",
+                               "Allow ClearCall in System Settings → Privacy & Security → Microphone, then try again.",
                                settingsURL: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
                 return
             }
@@ -88,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.lastRecording = result.file
             if result.systemAudioWasSilent && result.duration > 5 {
                 self.showAlert("The call audio was silent",
-                               "Your voice was recorded, but nothing playing on the Mac was. If you were on a call, allow Echo Recorder in System Settings → Privacy & Security → Screen & System Audio Recording (under \"System Audio Recording Only\"), then quit and reopen Echo Recorder.",
+                               "Your voice was recorded, but nothing playing on the Mac was. If you were on a call, allow ClearCall in System Settings → Privacy & Security → Screen & System Audio Recording (under \"System Audio Recording Only\"), then quit and reopen ClearCall.",
                                settingsURL: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
             }
         }
@@ -104,7 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func openSettings() {
         if settingsWindow == nil {
             let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView()))
-            window.title = "Echo Recorder Settings"
+            window.title = "ClearCall Settings"
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false
             window.center()
@@ -129,7 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 ? String(format: " %d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60)
                 : String(format: " %02d:%02d", s / 60, s % 60)
         } else {
-            button.image = NSImage(systemSymbolName: "waveform.circle", accessibilityDescription: "Echo Recorder")
+            button.image = NSImage(systemSymbolName: "waveform.circle", accessibilityDescription: "ClearCall")
             button.title = ""
         }
     }
