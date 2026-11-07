@@ -1,0 +1,37 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Build app
+        run: |
+          VERSION="0.1.${{ github.run_number }}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          chmod +x scripts/build-app.sh
+          scripts/build-app.sh "$VERSION" "${{ github.run_number }}"
+
+      - name: Publish download
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v$VERSION" "dist/Echo-Recorder-$VERSION.zip" \
+            --title "Echo Recorder $VERSION" \
+            --notes "Download the zip, unzip it and move Echo Recorder to Applications. Commit: ${{ github.sha }}" \
+            --target "${{ github.sha }}"
