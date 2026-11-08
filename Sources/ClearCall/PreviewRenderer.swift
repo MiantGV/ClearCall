@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 /// `ClearCall --render-previews <folder>` writes PNGs of the window (used by the build to check the design).
+@MainActor
 enum PreviewRenderer {
     static func runIfRequested() -> Bool {
         let args = CommandLine.arguments
