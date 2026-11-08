@@ -57,14 +57,22 @@ jobs:
           # 1. A genuine build must be accepted.
           OUT=$("$APP_BIN" --verify-update "dist/ClearCall-$VERSION.zip" "${{ github.run_number }}"); echo "$OUT"
           echo "$OUT" | grep -q "ACCEPTED" || { echo "genuine update was rejected"; exit 1; }
-          # 2. The same app re-signed with a different identity must be rejected.
-          T="$RUNNER_TEMP/forged"; rm -rf "$T"; mkdir -p "$T"
+          # 2. A tampered app (changed after signing) must be rejected.
+          T="$RUNNER_TEMP/tampered"; rm -rf "$T"; mkdir -p "$T"
           ditto -x -k "dist/ClearCall-$VERSION.zip" "$T"
-          codesign --force --sign - -r='designated => identifier "com.example.other"' "$T/ClearCall.app"
-          ditto -c -k --keepParent "$T/ClearCall.app" "$T/forged.zip"
-          OUT=$("$APP_BIN" --verify-update "$T/forged.zip" "${{ github.run_number }}"); echo "$OUT"
-          echo "$OUT" | grep -q "REJECTED" || { echo "forged update was accepted"; exit 1; }
-          # 3. A wrong version number must be rejected.
+          printf 'x' >> "$T/ClearCall.app/Contents/MacOS/ClearCall"
+          ditto -c -k --keepParent "$T/ClearCall.app" "$T/bad.zip"
+          OUT=$("$APP_BIN" --verify-update "$T/bad.zip" "${{ github.run_number }}"); echo "$OUT"
+          echo "$OUT" | grep -q "REJECTED" || { echo "tampered update was accepted"; exit 1; }
+          # 3. A different app must be rejected.
+          T="$RUNNER_TEMP/other"; rm -rf "$T"; mkdir -p "$T"
+          ditto -x -k "dist/ClearCall-$VERSION.zip" "$T"
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier com.example.other' "$T/ClearCall.app/Contents/Info.plist"
+          codesign --force --sign - "$T/ClearCall.app"
+          ditto -c -k --keepParent "$T/ClearCall.app" "$T/other.zip"
+          OUT=$("$APP_BIN" --verify-update "$T/other.zip" "${{ github.run_number }}"); echo "$OUT"
+          echo "$OUT" | grep -q "REJECTED" || { echo "different app was accepted"; exit 1; }
+          # 4. A wrong version number must be rejected.
           OUT=$("$APP_BIN" --verify-update "dist/ClearCall-$VERSION.zip" 99999); echo "$OUT"
           echo "$OUT" | grep -q "REJECTED" || { echo "wrong-version update was accepted"; exit 1; }
 
