@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, echo-cancellation]
   workflow_dispatch:
 
 permissions:
@@ -20,14 +20,34 @@ jobs:
           xcodebuild -version
           swift --version
 
+      - name: Install build tools
+        run: |
+          brew install meson ninja pkgconf || true
+          meson --version
+          pkg-config --version
+
+      - name: Cache WebRTC build
+        uses: actions/cache@v4
+        with:
+          path: vendor/webrtc
+          key: webrtc-${{ runner.os }}-${{ hashFiles('scripts/build-webrtc.sh') }}
+
       - name: Build app
         run: |
           VERSION="0.1.${{ github.run_number }}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          chmod +x scripts/build-app.sh
+          chmod +x scripts/*.sh
           scripts/build-app.sh "$VERSION" "${{ github.run_number }}"
 
+      - name: Keep build (test branches)
+        if: github.ref != 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClearCall-${{ env.VERSION }}
+          path: dist/ClearCall-${{ env.VERSION }}.zip
+
       - name: Publish download
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

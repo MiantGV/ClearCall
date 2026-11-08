@@ -1,6 +1,5 @@
 #include "CEchoCancel.h"
 
-#include <memory>
 #include <vector>
 
 #include "modules/audio_processing/include/audio_processing.h"
@@ -11,19 +10,20 @@ struct ECHandle {
     std::vector<float> scratch;
 };
 
-extern "C" ECHandle *ec_create(int sample_rate, int noise_suppression) {
+extern "C" ECHandle *ec_create(int sample_rate, int echo_cancel, int noise_suppression, int auto_gain) {
     rtc::scoped_refptr<webrtc::AudioProcessing> apm = webrtc::AudioProcessingBuilder().Create();
     if (!apm) return nullptr;
 
     webrtc::AudioProcessing::Config config;
     config.pipeline.maximum_internal_processing_rate = 48000;
-    config.echo_canceller.enabled = true;
-    config.echo_canceller.mobile_mode = false;
     config.high_pass_filter.enabled = true;
+    config.echo_canceller.enabled = echo_cancel != 0;
+    config.echo_canceller.mobile_mode = false;
     config.noise_suppression.enabled = noise_suppression != 0;
-    config.noise_suppression.level = webrtc::AudioProcessing::Config::NoiseSuppression::kLow;
+    config.noise_suppression.level = webrtc::AudioProcessing::Config::NoiseSuppression::kModerate;
     config.gain_controller1.enabled = false;
-    config.gain_controller2.enabled = false;
+    config.gain_controller2.enabled = auto_gain != 0;
+    config.gain_controller2.adaptive_digital.enabled = auto_gain != 0;
     apm->ApplyConfig(config);
     apm->Initialize();
 

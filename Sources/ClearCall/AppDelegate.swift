@@ -68,7 +68,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return
             }
             do {
-                try self.recorder.start(in: self.settings.saveFolder, keepTestTracks: self.settings.keepTestTracks)
+                try self.recorder.start(in: self.settings.saveFolder, keepTestTracks: self.settings.keepTestTracks,
+                                        echoCancellation: self.settings.echoCancellation)
                 self.startedAt = Date()
                 self.timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.updateIcon() }
                 self.updateIcon()

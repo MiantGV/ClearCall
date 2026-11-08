@@ -3,3 +3,5 @@ dist/
 .swiftpm/
 *.xcodeproj
 .DS_Store
+vendor/
+.build-webrtc/

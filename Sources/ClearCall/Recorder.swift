@@ -38,7 +38,7 @@ final class Recorder {
 
     private(set) var isRecording = false
 
-    func start(in folder: URL, keepTestTracks: Bool) throws {
+    func start(in folder: URL, keepTestTracks: Bool, echoCancellation: Bool) throws {
         guard !isRecording else { return }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
@@ -61,7 +61,7 @@ final class Recorder {
             micResampler = nil
             systemResampler = nil
             outFrame = 0
-            canceller = PassthroughCanceller()
+            canceller = WebRTCCanceller(echoCancel: echoCancellation, autoGain: true) ?? PassthroughCanceller()
             mixFile = mix
             testFiles = tests.map { (micRaw: $0.0, micClean: $0.1, system: $0.2) }
             systemPeak = 0

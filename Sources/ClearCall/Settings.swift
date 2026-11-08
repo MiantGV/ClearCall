@@ -12,6 +12,9 @@ final class AppSettings: ObservableObject {
     @Published var keepTestTracks: Bool {
         didSet { defaults.set(keepTestTracks, forKey: "keepTestTracks") }
     }
+    @Published var echoCancellation: Bool {
+        didSet { defaults.set(echoCancellation, forKey: "echoCancellation") }
+    }
 
     static var defaultFolder: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -25,6 +28,7 @@ final class AppSettings: ObservableObject {
             saveFolder = Self.defaultFolder
         }
         keepTestTracks = defaults.bool(forKey: "keepTestTracks")
+        echoCancellation = defaults.object(forKey: "echoCancellation") as? Bool ?? true
     }
 
     func chooseFolder() {
@@ -76,6 +80,12 @@ struct SettingsView: View {
                             .disabled(settings.saveFolder == AppSettings.defaultFolder)
                     }
                 }
+            }
+            Section {
+                Toggle("Remove echo (for calls on speakers)", isOn: $settings.echoCancellation)
+                Text("Removes the other person's voice from your microphone so it isn't recorded twice. Your voice level is always adjusted automatically.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Section {
                 Toggle("Also save separate test tracks", isOn: $settings.keepTestTracks)
