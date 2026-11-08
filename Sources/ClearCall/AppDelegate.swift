@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private let controller = AppController.shared
     private let settings = AppSettings.shared
     private let prompts = PromptPanel()
+    private let pill = RecordingPill()
     private var mainWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private var timer: Timer?
@@ -166,6 +167,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         timer = nil
         if controller.isRecording {
             timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.updateIcon() }
+            if settings.showRecordingPill { pill.show { [weak self] in self?.controller.stop() } }
+        } else {
+            pill.hide()
         }
         updateIcon()
     }

@@ -22,6 +22,8 @@ final class AppController: ObservableObject {
     @Published private(set) var lastSaved: URL?
     @Published var micLevel: Float = 0
     @Published var callLevel: Float = 0
+    /// Recent combined levels (0…1) for the recording pill's waveform.
+    @Published private(set) var levelHistory: [Float] = []
 
     let settings = AppSettings.shared
     private let recorder = Recorder()
@@ -41,6 +43,8 @@ final class AppController: ObservableObject {
             // Smooth falling meters.
             self.micLevel = max(Self.meter(mic), self.micLevel * 0.8)
             self.callLevel = max(Self.meter(call), self.callLevel * 0.8)
+            let combined = max(Self.meter(mic), Self.meter(call))
+            self.levelHistory = Array((self.levelHistory + [combined]).suffix(9))
         }
         detector.onCallStarted = { [weak self] call in self?.callStarted(call) }
         detector.onCallEnded = { [weak self] call in self?.callEnded(call) }
@@ -91,6 +95,7 @@ final class AppController: ObservableObject {
         recordingSource = nil
         micLevel = 0
         callLevel = 0
+        levelHistory = []
         onStateChange?()
         recorder.stop { [weak self] result in
             guard let self, let result else { return }
@@ -173,6 +178,7 @@ final class AppController: ObservableObject {
         activeCall = call.map { CallDetector.Call(appName: $0, bundleID: "") }
         micLevel = recording ? 0.72 : 0
         callLevel = recording ? 0.55 : 0
+        levelHistory = recording ? [0.2, 0.45, 0.8, 0.55, 0.95, 0.6, 0.35, 0.7, 0.4] : []
         self.recent = recent
         lastSaved = recent.first?.url
     }

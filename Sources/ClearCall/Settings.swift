@@ -30,6 +30,9 @@ final class AppSettings: ObservableObject {
     @Published var callStartAction: CallStartAction {
         didSet { defaults.set(callStartAction.rawValue, forKey: "callStartAction") }
     }
+    @Published var showRecordingPill: Bool {
+        didSet { defaults.set(showRecordingPill, forKey: "showRecordingPill") }
+    }
     @Published var stopWhenCallEnds: Bool {
         didSet { defaults.set(stopWhenCallEnds, forKey: "stopWhenCallEnds") }
     }
@@ -49,6 +52,7 @@ final class AppSettings: ObservableObject {
         echoCancellation = defaults.object(forKey: "echoCancellation") as? Bool ?? true
         callStartAction = CallStartAction(rawValue: defaults.string(forKey: "callStartAction") ?? "") ?? .ask
         stopWhenCallEnds = defaults.object(forKey: "stopWhenCallEnds") as? Bool ?? true
+        showRecordingPill = defaults.object(forKey: "showRecordingPill") as? Bool ?? true
     }
 
     func chooseFolder() {
@@ -142,14 +146,20 @@ struct SettingsView: View {
                 }
                 Toggle("Stop recording when the call ends", isOn: $settings.stopWhenCallEnds)
                 HStack {
-                    Text("The \"Record?\" card appears at the bottom of the screen. Drag it to move it.")
+                    Text("The \"Record?\" card and the recording pill appear at the bottom of the screen. Drag them to move them.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button("Reset Position") { PromptPanel.resetPosition() }
+                    Button("Reset Position") { PromptPanel.resetPosition(); RecordingPill.resetPosition() }
                         .controlSize(.small)
                 }
                 Text("ClearCall notices calls in WhatsApp, Teams, Zoom, FaceTime, Slack, Discord, Webex, Telegram and browsers (Google Meet and other web calls).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                Toggle("Show a recording pill at the bottom of the screen", isOn: $settings.showRecordingPill)
+                Text("A small bar with a live waveform, the time and a stop button while ClearCall records. Drag it to move it.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

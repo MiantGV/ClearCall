@@ -27,6 +27,8 @@ enum PreviewRenderer {
                 save(view, to: folder.appendingPathComponent("window-\(name)-\(scheme == .dark ? "dark" : "light").png"))
             }
         }
+        controller.applyPreview(recording: true, call: "WhatsApp", recent: samples)
+        save(PillView(stop: {}).padding(20).background(Color(white: 0.85)), to: folder.appendingPathComponent("pill.png"))
         save(SettingsView().background(Color(white: 0.95)), to: folder.appendingPathComponent("settings.png"))
         return true
     }
