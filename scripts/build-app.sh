@@ -14,8 +14,9 @@ cd "$ROOT"
 # 1. WebRTC audio processing (echo cancellation), as static libraries.
 "$ROOT/scripts/build-webrtc.sh"
 export PKG_CONFIG_PATH="$ROOT/vendor/webrtc/lib/pkgconfig"
-CFLAGS="$(pkg-config --cflags webrtc-audio-processing-2)"
-LIBS="$(pkg-config --static --libs webrtc-audio-processing-2)"
+# Abseil (bundled into the WebRTC library) installs its headers into include/ directly.
+CFLAGS="$(pkg-config --cflags webrtc-audio-processing-2) -I$ROOT/vendor/webrtc/include"
+LIBS="-L$ROOT/vendor/webrtc/lib -lwebrtc-audio-processing-2 -framework CoreFoundation -framework Foundation"
 echo "WebRTC cflags: $CFLAGS"
 echo "WebRTC libs:   $LIBS"
 
