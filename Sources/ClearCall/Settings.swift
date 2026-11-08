@@ -106,6 +106,14 @@ struct SettingsView: View {
                     ForEach(AppSettings.CallStartAction.allCases) { Text($0.label).tag($0) }
                 }
                 Toggle("Stop recording when the call ends", isOn: $settings.stopWhenCallEnds)
+                HStack {
+                    Text("The \"Record?\" card appears at the bottom of the screen. Drag it to move it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Reset Position") { PromptPanel.resetPosition() }
+                        .controlSize(.small)
+                }
                 Text("ClearCall notices calls in WhatsApp, Teams, Zoom, FaceTime, Slack, Discord, Webex, Telegram and browsers (Google Meet and other web calls).")
                     .font(.caption)
                     .foregroundStyle(.secondary)

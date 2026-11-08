@@ -6,6 +6,7 @@ import SwiftUI
 final class PromptPanel {
     private var panel: NSPanel?
     private var dismissWork: DispatchWorkItem?
+    private var moveObserver: NSObjectProtocol?
 
     func showCallStarted(_ call: CallDetector.Call, record: @escaping () -> Void) {
         show(PromptCard(icon: "phone.fill",
@@ -29,8 +30,43 @@ final class PromptPanel {
     func hide() {
         dismissWork?.cancel()
         dismissWork = nil
+        if let moveObserver { NotificationCenter.default.removeObserver(moveObserver) }
+        moveObserver = nil
         panel?.orderOut(nil)
         panel = nil
+    }
+
+    // MARK: Position
+
+    /// The screen you're working on (where the mouse is).
+    private static var currentScreen: NSScreen? {
+        let mouse = NSEvent.mouseLocation
+        return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
+    }
+
+    /// Default: bottom of the screen, just right of centre (beside Wispr Flow's card), above the Dock.
+    /// After you drag the card, its spot is kept relative to the bottom centre of whichever screen is in use.
+    private static func position(for size: NSSize) -> NSPoint {
+        guard let area = currentScreen?.visibleFrame else { return .zero }
+        let defaults = UserDefaults.standard
+        let dx = defaults.object(forKey: "promptOffsetX") as? Double ?? 200
+        let dy = defaults.object(forKey: "promptOffsetY") as? Double ?? 24
+        var x = area.midX + dx
+        var y = area.minY + dy
+        x = min(max(x, area.minX + 8), area.maxX - size.width - 8)
+        y = min(max(y, area.minY + 8), area.maxY - size.height - 8)
+        return NSPoint(x: x, y: y)
+    }
+
+    private static func remember(_ frame: NSRect) {
+        guard let area = (NSScreen.screens.first { $0.frame.intersects(frame) } ?? NSScreen.main)?.visibleFrame else { return }
+        UserDefaults.standard.set(Double(frame.minX - area.midX), forKey: "promptOffsetX")
+        UserDefaults.standard.set(Double(frame.minY - area.minY), forKey: "promptOffsetY")
+    }
+
+    static func resetPosition() {
+        UserDefaults.standard.removeObject(forKey: "promptOffsetX")
+        UserDefaults.standard.removeObject(forKey: "promptOffsetY")
     }
 
     private func show(_ card: PromptCard, autoHideAfter seconds: TimeInterval) {
@@ -47,12 +83,13 @@ final class PromptPanel {
         panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = hosting
-        if let screen = NSScreen.main {
-            let area = screen.visibleFrame
-            panel.setFrameOrigin(NSPoint(x: area.maxX - panel.frame.width - 16, y: area.maxY - panel.frame.height - 12))
-        }
+        panel.isMovableByWindowBackground = true     // drag it anywhere; the spot is remembered
+        panel.setFrameOrigin(Self.position(for: panel.frame.size))
         panel.orderFrontRegardless()
         self.panel = panel
+        moveObserver = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: panel, queue: .main) { _ in
+            Self.remember(panel.frame)
+        }
 
         let work = DispatchWorkItem { [weak self] in self?.hide() }
         dismissWork = work
