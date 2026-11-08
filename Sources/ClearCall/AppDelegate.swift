@@ -28,7 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         controller.showAlert = { [weak self] title, text, url in self?.showAlert(title, text, settingsURL: url) }
 
         controller.launch()
-        Updater.shared.startAutomaticChecks()
+        Updater.shared.onInstallFailed = { [weak self] message in
+            self?.showAlert("ClearCall couldn't update", message)
+        }
         updateIcon()
         showMainWindow()
     }
@@ -103,11 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
         menu.addItem(item("Open Recordings Folder", #selector(openFolder)))
         menu.addItem(item("Settings…", #selector(openSettings), key: ","))
-        if let release = Updater.shared.availableRelease {
-            menu.addItem(item("Install Update (\(release.version))…", #selector(installUpdate)))
-        } else {
-            menu.addItem(item("Check for Updates…", #selector(checkForUpdates)))
-        }
+        menu.addItem(updateMenuItem())
         menu.addItem(.separator())
         menu.addItem(item("Quit ClearCall", #selector(quit), key: "q"))
     }
@@ -128,11 +126,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     @objc private func quit() { NSApp.terminate(nil) }
 
-    @objc private func installUpdate() { Updater.shared.install() }
+    private func updateMenuItem() -> NSMenuItem {
+        let updater = Updater.shared
+        switch updater.state {
+        case .checking: return disabledItem("Checking for Updates…")
+        case .downloading: return disabledItem("Downloading Update…")
+        case .installing: return disabledItem("Installing Update…")
+        default:
+            let item = item("Update ClearCall…", #selector(updateClearCall))
+            item.isEnabled = !controller.isRecording
+            if controller.isRecording { item.toolTip = "Stop recording first" }
+            return item
+        }
+    }
 
-    @objc private func checkForUpdates() {
-        Updater.shared.check()
-        openSettings()          // the Updates section shows the result
+    private func disabledItem(_ title: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
+    }
+
+    @objc private func updateClearCall() {
+        Updater.shared.checkAndInstall { [weak self] result in
+            switch result {
+            case .upToDate:
+                self?.showAlert("ClearCall is up to date", "You have the latest version (\(Updater.shared.currentVersion)).")
+            case .failed(let message):
+                self?.showAlert("Couldn't check for updates", message)
+            default:
+                break
+            }
+        }
     }
 
     // MARK: Menu bar icon

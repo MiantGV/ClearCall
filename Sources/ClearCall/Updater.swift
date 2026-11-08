@@ -2,14 +2,13 @@ import AppKit
 import Foundation
 import Security
 
-/// Built-in updates from the ClearCall GitHub releases.
+/// Built-in updates from the ClearCall GitHub releases. Only runs when you choose "Update ClearCall…".
 /// Downloads happen inside the app (not a browser), so macOS doesn't block the new version,
 /// and the signature pins the bundle identifier, so permissions carry over.
 final class Updater: ObservableObject {
     static let shared = Updater()
 
     static let repo = "MiantGV/ClearCall"
-    private static let checkInterval: TimeInterval = 6 * 3600
 
     struct Release: Equatable {
         let version: String      // "0.1.15"
@@ -38,20 +37,24 @@ final class Updater: ObservableObject {
     var currentVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?" }
     var currentBuild: Int { Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") ?? 0 }
 
-    private var timer: Timer?
-
-    func startAutomaticChecks() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.check() }
-        timer = Timer.scheduledTimer(withTimeInterval: Self.checkInterval, repeats: true) { [weak self] _ in self?.check() }
-    }
-
     // MARK: Check
 
-    func check() {
+    private var onChecked: ((State) -> Void)?
+
+    /// Checks GitHub, then installs straight away if there's a newer version.
+    /// `report` is called if there's nothing to install (up to date or an error).
+    func checkAndInstall(report: @escaping (State) -> Void) {
+        check { [weak self] result in
+            if case .available = result { self?.install() } else { report(result) }
+        }
+    }
+
+    func check(_ completion: ((State) -> Void)? = nil) {
         switch state {
         case .checking, .downloading, .installing: return
         default: break
         }
+        onChecked = completion
         state = .checking
         var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(Self.repo)/releases/latest")!)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -72,6 +75,7 @@ final class Updater: ObservableObject {
             let code = (response as? HTTPURLResponse)?.statusCode
             state = .failed(code == 404 ? "Updates aren't reachable. The ClearCall repository needs to be public."
                                         : "Couldn't check for updates. Check your internet connection.")
+            finishCheck()
             return
         }
         let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
@@ -82,33 +86,44 @@ final class Updater: ObservableObject {
               let url = URL(string: urlString)
         else {
             state = .upToDate
+            finishCheck()
             return
         }
         state = .available(Release(version: version, build: build, zipURL: url))
+        finishCheck()
+    }
+
+    private func finishCheck() {
+        let completion = onChecked
+        onChecked = nil
+        completion?(state)
     }
 
     // MARK: Install
 
+    /// Called when an install step fails.
+    var onInstallFailed: ((String) -> Void)?
+
     func install() {
         guard let release = availableRelease else { return }
         guard !AppController.shared.isRecording else {
-            state = .failed("Stop the recording before updating.")
+            fail("Stop the recording before updating.")
             return
         }
         let appURL = Bundle.main.bundleURL
         if appURL.path.contains("/AppTranslocation/") {
-            state = .failed("Move ClearCall into your Applications folder first, then update.")
+            fail("Move ClearCall into your Applications folder first, then update.")
             return
         }
         guard FileManager.default.isWritableFile(atPath: appURL.deletingLastPathComponent().path) else {
-            state = .failed("ClearCall can't replace itself in \(appURL.deletingLastPathComponent().path).")
+            fail("ClearCall can't replace itself in \(appURL.deletingLastPathComponent().path).")
             return
         }
         state = .downloading
         URLSession.shared.downloadTask(with: release.zipURL) { [weak self] tempURL, response, error in
             guard let self else { return }
             guard let tempURL, error == nil, (response as? HTTPURLResponse)?.statusCode == 200 else {
-                DispatchQueue.main.async { self.state = .failed("The download failed. Please try again.") }
+                DispatchQueue.main.async { self.fail("The download failed. Please try again.") }
                 return
             }
             do {
@@ -118,7 +133,7 @@ final class Updater: ObservableObject {
                     self.replaceAndRelaunch(with: newApp, at: appURL)
                 }
             } catch {
-                DispatchQueue.main.async { self.state = .failed(error.localizedDescription) }
+                DispatchQueue.main.async { self.fail(error.localizedDescription) }
             }
         }.resume()
     }
@@ -159,6 +174,11 @@ final class Updater: ObservableObject {
         return SecStaticCodeCheckValidity(newCode, flags, requirement) == errSecSuccess
     }
 
+    private func fail(_ message: String) {
+        state = .failed(message)
+        onInstallFailed?(message)
+    }
+
     /// Swaps the app once this process has quit, then opens the new version.
     private func replaceAndRelaunch(with newApp: URL, at appURL: URL) {
         let script = """
@@ -182,7 +202,7 @@ final class Updater: ObservableObject {
             try process.run()
             NSApp.terminate(nil)
         } catch {
-            state = .failed("Couldn't start the update: \(error.localizedDescription)")
+            fail("Couldn't start the update: \(error.localizedDescription)")
         }
     }
 

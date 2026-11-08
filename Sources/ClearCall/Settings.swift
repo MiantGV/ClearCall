@@ -85,13 +85,8 @@ struct UpdateRow: View {
                     .foregroundStyle(isError ? .red : .secondary)
             }
             Spacer()
-            if let release = updater.availableRelease {
-                Button("Update to \(release.version)") { updater.install() }
-                    .buttonStyle(.borderedProminent)
-            } else {
-                Button("Check for Updates") { updater.check() }
-                    .disabled(updater.state == .checking || updater.state == .downloading || updater.state == .installing)
-            }
+            Button("Update ClearCall") { updater.checkAndInstall { _ in } }
+                .disabled(updater.state == .checking || updater.state == .downloading || updater.state == .installing)
         }
     }
 
@@ -102,7 +97,7 @@ struct UpdateRow: View {
 
     private var statusText: String {
         switch updater.state {
-        case .idle: return "Checks for updates automatically."
+        case .idle: return "Checks for a new version only when you ask."
         case .checking: return "Checking…"
         case .upToDate: return "You have the latest version."
         case .available(let r): return "Version \(r.version) is available."
