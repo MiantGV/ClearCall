@@ -147,10 +147,12 @@ final class Updater: ObservableObject {
     /// The new app must be validly signed and meet the same designated requirement as this one.
     private static func satisfiesOurRequirement(_ url: URL) -> Bool {
         var selfCode: SecCode?
+        var selfStatic: SecStaticCode?
         var requirement: SecRequirement?
         var newCode: SecStaticCode?
         guard SecCodeCopySelf([], &selfCode) == errSecSuccess, let selfCode,
-              SecCodeCopyDesignatedRequirement(selfCode, [], &requirement) == errSecSuccess, let requirement,
+              SecCodeCopyStaticCode(selfCode, [], &selfStatic) == errSecSuccess, let selfStatic,
+              SecCodeCopyDesignatedRequirement(selfStatic, [], &requirement) == errSecSuccess, let requirement,
               SecStaticCodeCreateWithPath(url as CFURL, [], &newCode) == errSecSuccess, let newCode
         else { return false }
         let flags = SecCSFlags(rawValue: UInt32(kSecCSCheckAllArchitectures) | UInt32(kSecCSStrictValidate) | UInt32(kSecCSCheckNestedCode))
