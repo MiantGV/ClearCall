@@ -38,6 +38,12 @@ final class Recorder {
 
     private(set) var isRecording = false
 
+    /// Called on the main thread about 20 times a second with peak levels (0…1) of your voice and the call.
+    var onLevels: ((Float, Float) -> Void)?
+    private var levelFrames = 0
+    private var micPeak: Float = 0
+    private var callPeak: Float = 0
+
     func start(in folder: URL, keepTestTracks: Bool, echoCancellation: Bool) throws {
         guard !isRecording else { return }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -144,6 +150,16 @@ final class Recorder {
             for i in 0..<n {
                 mixed[i] = softClip(cleaned[i] + reference[i])
                 systemPeak = max(systemPeak, abs(reference[i]))
+                micPeak = max(micPeak, abs(cleaned[i]))
+                callPeak = max(callPeak, abs(reference[i]))
+            }
+            levelFrames += 1
+            if levelFrames >= 5, let onLevels {
+                let m = micPeak, c = callPeak
+                DispatchQueue.main.async { onLevels(m, c) }
+                levelFrames = 0
+                micPeak = 0
+                callPeak = 0
             }
             write(mixed, to: mixFile)
             if let tests = testFiles {

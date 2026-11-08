@@ -16,6 +16,24 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(echoCancellation, forKey: "echoCancellation") }
     }
 
+    enum CallStartAction: String, CaseIterable, Identifiable {
+        case ask, record, nothing
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .ask: return "Ask me to record"
+            case .record: return "Start recording automatically"
+            case .nothing: return "Do nothing"
+            }
+        }
+    }
+    @Published var callStartAction: CallStartAction {
+        didSet { defaults.set(callStartAction.rawValue, forKey: "callStartAction") }
+    }
+    @Published var stopWhenCallEnds: Bool {
+        didSet { defaults.set(stopWhenCallEnds, forKey: "stopWhenCallEnds") }
+    }
+
     static var defaultFolder: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Meeting Recordings", isDirectory: true)
@@ -29,6 +47,8 @@ final class AppSettings: ObservableObject {
         }
         keepTestTracks = defaults.bool(forKey: "keepTestTracks")
         echoCancellation = defaults.object(forKey: "echoCancellation") as? Bool ?? true
+        callStartAction = CallStartAction(rawValue: defaults.string(forKey: "callStartAction") ?? "") ?? .ask
+        stopWhenCallEnds = defaults.object(forKey: "stopWhenCallEnds") as? Bool ?? true
     }
 
     func chooseFolder() {
@@ -80,6 +100,15 @@ struct SettingsView: View {
                             .disabled(settings.saveFolder == AppSettings.defaultFolder)
                     }
                 }
+            }
+            Section("Calls") {
+                Picker("When a call starts", selection: $settings.callStartAction) {
+                    ForEach(AppSettings.CallStartAction.allCases) { Text($0.label).tag($0) }
+                }
+                Toggle("Stop recording when the call ends", isOn: $settings.stopWhenCallEnds)
+                Text("ClearCall notices calls in WhatsApp, Teams, Zoom, FaceTime, Slack, Discord, Webex, Telegram and browsers (Google Meet and other web calls).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Section {
                 Toggle("Remove echo (for calls on speakers)", isOn: $settings.echoCancellation)

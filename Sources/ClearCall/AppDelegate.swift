@@ -1,14 +1,14 @@
 import AppKit
 import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem!
-    private let recorder = Recorder()
+    private let controller = AppController.shared
     private let settings = AppSettings.shared
+    private let prompts = PromptPanel()
+    private var mainWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private var timer: Timer?
-    private var startedAt: Date?
-    private var lastRecording: URL?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -16,91 +16,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
+
+        controller.onStateChange = { [weak self] in self?.stateChanged() }
+        controller.showCallPrompt = { [weak self] call in
+            self?.prompts.showCallStarted(call) { self?.controller.start(source: call.appName) }
+        }
+        controller.showSavedNotice = { [weak self] file, source in
+            self?.prompts.showSaved(file, source: source) { self?.controller.reveal(file) }
+        }
+        controller.hidePrompts = { [weak self] in self?.prompts.hide() }
+        controller.showAlert = { [weak self] title, text, url in self?.showAlert(title, text, settingsURL: url) }
+
+        controller.launch()
         updateIcon()
+        showMainWindow()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showMainWindow()
+        return true
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        if recorder.isRecording {
-            let done = DispatchSemaphore(value: 0)
-            recorder.stop { _ in done.signal() }
-            _ = done.wait(timeout: .now() + 3)
+        controller.stopForQuit()
+    }
+
+    // MARK: Windows
+
+    @objc func showMainWindow() {
+        if mainWindow == nil {
+            let hosting = NSHostingController(rootView: MainView(openSettings: { [weak self] in self?.openSettings() }))
+            let window = NSWindow(contentViewController: hosting)
+            window.title = "ClearCall"
+            window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.isMovableByWindowBackground = true
+            window.isReleasedWhenClosed = false
+            window.delegate = self
+            window.setFrameAutosaveName("ClearCallMain")
+            if !window.setFrameUsingName("ClearCallMain") { window.center() }
+            mainWindow = window
+        }
+        // Show a Dock icon while the window is open, so it can be found with ⌘-Tab.
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        mainWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === mainWindow else { return }
+        // Back to a menu-bar-only app; recording and call detection keep running.
+        DispatchQueue.main.async {
+            if self.settingsWindow?.isVisible != true { NSApp.setActivationPolicy(.accessory) }
         }
     }
-
-    // MARK: Menu
-
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.removeAllItems()
-        if recorder.isRecording {
-            menu.addItem(item("Stop Recording", #selector(toggleRecording), key: "r"))
-        } else {
-            menu.addItem(item("Start Recording", #selector(toggleRecording), key: "r"))
-        }
-        menu.addItem(.separator())
-        if lastRecording != nil {
-            menu.addItem(item("Show Last Recording", #selector(showLastRecording)))
-        }
-        menu.addItem(item("Open Recordings Folder", #selector(openFolder)))
-        menu.addItem(item("Settings…", #selector(openSettings), key: ","))
-        menu.addItem(.separator())
-        menu.addItem(item("Quit ClearCall", #selector(quit), key: "q"))
-    }
-
-    private func item(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
-        item.target = self
-        return item
-    }
-
-    // MARK: Actions
-
-    @objc private func toggleRecording() {
-        recorder.isRecording ? stopRecording() : startRecording()
-    }
-
-    private func startRecording() {
-        MicCapture.requestPermission { [weak self] granted in
-            guard let self else { return }
-            guard granted else {
-                self.showAlert("Microphone access is off",
-                               "Allow ClearCall in System Settings → Privacy & Security → Microphone, then try again.",
-                               settingsURL: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
-                return
-            }
-            do {
-                try self.recorder.start(in: self.settings.saveFolder, keepTestTracks: self.settings.keepTestTracks,
-                                        echoCancellation: self.settings.echoCancellation)
-                self.startedAt = Date()
-                self.timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.updateIcon() }
-                self.updateIcon()
-            } catch {
-                self.showAlert("Couldn't start recording", error.localizedDescription)
-            }
-        }
-    }
-
-    private func stopRecording() {
-        timer?.invalidate()
-        timer = nil
-        startedAt = nil
-        updateIcon()
-        recorder.stop { [weak self] result in
-            guard let self, let result else { return }
-            self.lastRecording = result.file
-            if result.systemAudioWasSilent && result.duration > 5 {
-                self.showAlert("The call audio was silent",
-                               "Your voice was recorded, but nothing playing on the Mac was. If you were on a call, allow ClearCall in System Settings → Privacy & Security → Screen & System Audio Recording (under \"System Audio Recording Only\"), then quit and reopen ClearCall.",
-                               settingsURL: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
-            }
-        }
-    }
-
-    @objc private func showLastRecording() {
-        guard let url = lastRecording else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([url])
-    }
-
-    @objc private func openFolder() { settings.revealFolder() }
 
     @objc private func openSettings() {
         if settingsWindow == nil {
@@ -115,13 +85,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
+    // MARK: Menu
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        menu.addItem(item(controller.isRecording ? "Stop Recording" : "Start Recording", #selector(toggleRecording), key: "r"))
+        if let call = controller.activeCall, !controller.isRecording {
+            let info = NSMenuItem(title: "Call in progress: \(call.appName)", action: nil, keyEquivalent: "")
+            info.isEnabled = false
+            menu.addItem(info)
+        }
+        menu.addItem(.separator())
+        menu.addItem(item("Show ClearCall Window", #selector(showMainWindow)))
+        if controller.lastSaved != nil {
+            menu.addItem(item("Show Last Recording", #selector(showLastRecording)))
+        }
+        menu.addItem(item("Open Recordings Folder", #selector(openFolder)))
+        menu.addItem(item("Settings…", #selector(openSettings), key: ","))
+        menu.addItem(.separator())
+        menu.addItem(item("Quit ClearCall", #selector(quit), key: "q"))
+    }
+
+    private func item(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = self
+        return item
+    }
+
+    @objc private func toggleRecording() { controller.toggle() }
+
+    @objc private func showLastRecording() {
+        if let url = controller.lastSaved { controller.reveal(url) }
+    }
+
+    @objc private func openFolder() { settings.revealFolder() }
+
     @objc private func quit() { NSApp.terminate(nil) }
 
-    // MARK: UI
+    // MARK: Menu bar icon
+
+    private func stateChanged() {
+        timer?.invalidate()
+        timer = nil
+        if controller.isRecording {
+            timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.updateIcon() }
+        }
+        updateIcon()
+    }
 
     private func updateIcon() {
         guard let button = statusItem.button else { return }
-        if let startedAt {
+        if let startedAt = controller.startedAt {
             let image = NSImage(systemSymbolName: "record.circle.fill", accessibilityDescription: "Recording")
             let config = NSImage.SymbolConfiguration(paletteColors: [.white, .systemRed])
             button.image = image?.withSymbolConfiguration(config)
@@ -132,7 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             let image = NSImage(named: "MenuBarIcon")
                 ?? NSImage(systemSymbolName: "waveform", accessibilityDescription: "ClearCall")
-            image?.isTemplate = true          // adapts to light and dark menu bars
+            image?.isTemplate = true
             image?.size = NSSize(width: 18, height: 18)
             image?.accessibilityDescription = "ClearCall"
             button.image = image
