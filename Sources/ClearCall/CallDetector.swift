@@ -19,13 +19,13 @@ final class CallDetector {
     private var goneSince: Date?
 
     /// A call app must use the mic this long before it counts as a call (filters out quick mic checks).
-    private let startDelay: TimeInterval = 1
+    private let startDelay: TimeInterval = 2
     /// …and stop using it this long before the call counts as ended.
     private let endDelay: TimeInterval = 4
 
     func start() {
         guard timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.poll() }
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in self?.poll() }
         poll()
     }
 
