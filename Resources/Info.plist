@@ -10,6 +10,8 @@
     <string>com.miguel.clearcall</string>
     <key>CFBundleExecutable</key>
     <string>ClearCall</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

@@ -130,7 +130,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 ? String(format: " %d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60)
                 : String(format: " %02d:%02d", s / 60, s % 60)
         } else {
-            button.image = NSImage(systemSymbolName: "waveform.circle", accessibilityDescription: "ClearCall")
+            let image = NSImage(named: "MenuBarIcon")
+                ?? NSImage(systemSymbolName: "waveform", accessibilityDescription: "ClearCall")
+            image?.isTemplate = true          // adapts to light and dark menu bars
+            image?.size = NSSize(width: 18, height: 18)
+            image?.accessibilityDescription = "ClearCall"
+            button.image = image
             button.title = ""
         }
     }
