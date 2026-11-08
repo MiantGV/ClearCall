@@ -123,7 +123,7 @@ final class Updater: ObservableObject {
         }.resume()
     }
 
-    private func unpackAndVerify(zip: URL, expectedBuild: Int) throws -> URL {
+    func unpackAndVerify(zip: URL, expectedBuild: Int) throws -> URL {
         let work = FileManager.default.temporaryDirectory.appendingPathComponent("ClearCall-update-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         let zipCopy = work.appendingPathComponent("update.zip")
@@ -184,6 +184,22 @@ final class Updater: ObservableObject {
         } catch {
             state = .failed("Couldn't start the update: \(error.localizedDescription)")
         }
+    }
+
+    /// `ClearCall --verify-update <zip> <build>`: build-time check of the update safety logic.
+    static func runSelfTestIfRequested() -> Bool {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--verify-update"), i + 2 < args.count else { return false }
+        let zip = URL(fileURLWithPath: args[i + 1])
+        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("selftest-\(UUID().uuidString).zip")
+        try? FileManager.default.copyItem(at: zip, to: copy)
+        do {
+            let app = try Updater.shared.unpackAndVerify(zip: copy, expectedBuild: Int(args[i + 2]) ?? -1)
+            print("UPDATE-CHECK: ACCEPTED \(app.lastPathComponent)")
+        } catch {
+            print("UPDATE-CHECK: REJECTED \(error.localizedDescription)")
+        }
+        return true
     }
 
     @discardableResult
