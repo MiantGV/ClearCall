@@ -51,6 +51,16 @@ jobs:
             -o aec_test
           python3 tests/aec_test.py ./aec_test "$RUNNER_TEMP/aec"
 
+      - name: Render window previews
+        run: |
+          "dist/ClearCall.app/Contents/MacOS/ClearCall" --render-previews "$RUNNER_TEMP/previews"
+
+      - name: Keep previews
+        uses: actions/upload-artifact@v4
+        with:
+          name: previews-${{ env.VERSION }}
+          path: ${{ runner.temp }}/previews
+
       - name: Keep build (test branches)
         if: github.ref != 'refs/heads/main'
         uses: actions/upload-artifact@v4

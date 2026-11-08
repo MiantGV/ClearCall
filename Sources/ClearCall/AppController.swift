@@ -165,6 +165,18 @@ final class AppController: ObservableObject {
     func open(_ url: URL) { NSWorkspace.shared.open(url) }
     func reveal(_ url: URL) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
 
+    /// Sets display-only state for design previews.
+    func applyPreview(recording: Bool, call: String?, recent: [RecordingItem]) {
+        isRecording = recording
+        startedAt = recording ? Date().addingTimeInterval(-754) : nil
+        recordingSource = recording ? call : nil
+        activeCall = call.map { CallDetector.Call(appName: $0, bundleID: "") }
+        micLevel = recording ? 0.72 : 0
+        callLevel = recording ? 0.55 : 0
+        self.recent = recent
+        lastSaved = recent.first?.url
+    }
+
     /// Peak (0…1) to a meter position, on a 60 dB scale.
     private static func meter(_ peak: Float) -> Float {
         guard peak > 0 else { return 0 }
