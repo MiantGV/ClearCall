@@ -11,6 +11,7 @@ enum Brand {
 struct MainView: View {
     @ObservedObject var controller = AppController.shared
     @ObservedObject var settings = AppSettings.shared
+    @ObservedObject var updater = Updater.shared
     var openSettings: () -> Void
 
     var body: some View {
@@ -49,12 +50,25 @@ struct MainView: View {
                 .padding(.top, 18)
 
             Spacer(minLength: 12)
+            if let release = updater.availableRelease {
+                UpdateBanner(version: release.version) { updater.install() }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 10)
+            } else if updater.state == .downloading || updater.state == .installing {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(updater.state == .downloading ? "Downloading update…" : "Installing — ClearCall will reopen")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.bottom, 10)
+            }
             Divider()
             footer
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
         }
-        .frame(width: 380, height: 600)
+        .frame(width: 380, height: 640)
         .onAppear { controller.refreshRecent() }
     }
 
@@ -146,6 +160,28 @@ struct MainView: View {
 }
 
 // MARK: - Components
+
+struct UpdateBanner: View {
+    let version: String
+    let install: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.title3)
+                .foregroundStyle(Brand.violet)
+            Text("ClearCall \(version) is available")
+                .font(.callout)
+            Spacer()
+            Button("Update", action: install)
+                .buttonStyle(.borderedProminent)
+                .tint(Brand.violet)
+                .controlSize(.small)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Brand.blue.opacity(0.10)))
+    }
+}
 
 struct RecordButton: View {
     let isRecording: Bool

@@ -44,10 +44,21 @@ if otool -L "$APP/Contents/MacOS/ClearCall" | grep -E "/opt/homebrew|/usr/local|
   exit 1
 fi
 
-# 3. Sign (ad-hoc unless a signing identity is provided) and zip.
-IDENTITY="${SIGN_IDENTITY:--}"
-codesign --force --options runtime --entitlements Resources/ClearCall.entitlements --sign "$IDENTITY" "$APP"
-codesign --verify --verbose "$APP"
+# 3. Sign and zip.
+# macOS remembers microphone / system audio permission by the app's "designated requirement".
+# Without a certificate that would be the build's unique hash, so every update would ask again.
+# We pin it to the bundle identifier so updates keep their permissions.
+# If a certificate is provided later (SIGN_IDENTITY), its default requirement is used instead.
+BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")"
+if [ -n "${SIGN_IDENTITY:-}" ]; then
+  codesign --force --options runtime --entitlements Resources/ClearCall.entitlements --sign "$SIGN_IDENTITY" "$APP"
+else
+  codesign --force --options runtime --entitlements Resources/ClearCall.entitlements --sign - \
+    -r="designated => identifier \"$BUNDLE_ID\"" "$APP"
+fi
+codesign --verify --strict --verbose "$APP"
+echo "Designated requirement:"
+codesign -d -r- "$APP" 2>&1 | grep designated
 
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/ClearCall-$VERSION.zip"
 echo "Built $OUT/ClearCall-$VERSION.zip"

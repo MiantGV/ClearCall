@@ -73,6 +73,46 @@ final class AppSettings: ObservableObject {
     }
 }
 
+struct UpdateRow: View {
+    @ObservedObject var updater = Updater.shared
+
+    var body: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("ClearCall \(updater.currentVersion)")
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(isError ? .red : .secondary)
+            }
+            Spacer()
+            if let release = updater.availableRelease {
+                Button("Update to \(release.version)") { updater.install() }
+                    .buttonStyle(.borderedProminent)
+            } else {
+                Button("Check for Updates") { updater.check() }
+                    .disabled(updater.state == .checking || updater.state == .downloading || updater.state == .installing)
+            }
+        }
+    }
+
+    private var isError: Bool {
+        if case .failed = updater.state { return true }
+        return false
+    }
+
+    private var statusText: String {
+        switch updater.state {
+        case .idle: return "Checks for updates automatically."
+        case .checking: return "Checking…"
+        case .upToDate: return "You have the latest version."
+        case .available(let r): return "Version \(r.version) is available."
+        case .downloading: return "Downloading the update…"
+        case .installing: return "Installing — ClearCall will reopen."
+        case .failed(let message): return message
+        }
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var settings = AppSettings.shared
 
@@ -130,10 +170,8 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Section {
-                Text("ClearCall \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Section("Updates") {
+                UpdateRow()
             }
         }
         .formStyle(.grouped)

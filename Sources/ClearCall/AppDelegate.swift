@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         controller.showAlert = { [weak self] title, text, url in self?.showAlert(title, text, settingsURL: url) }
 
         controller.launch()
+        Updater.shared.startAutomaticChecks()
         updateIcon()
         showMainWindow()
     }
@@ -102,6 +103,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
         menu.addItem(item("Open Recordings Folder", #selector(openFolder)))
         menu.addItem(item("Settings…", #selector(openSettings), key: ","))
+        if let release = Updater.shared.availableRelease {
+            menu.addItem(item("Install Update (\(release.version))…", #selector(installUpdate)))
+        } else {
+            menu.addItem(item("Check for Updates…", #selector(checkForUpdates)))
+        }
         menu.addItem(.separator())
         menu.addItem(item("Quit ClearCall", #selector(quit), key: "q"))
     }
@@ -121,6 +127,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     @objc private func openFolder() { settings.revealFolder() }
 
     @objc private func quit() { NSApp.terminate(nil) }
+
+    @objc private func installUpdate() { Updater.shared.install() }
+
+    @objc private func checkForUpdates() {
+        Updater.shared.check()
+        openSettings()          // the Updates section shows the result
+    }
 
     // MARK: Menu bar icon
 
