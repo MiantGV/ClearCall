@@ -150,7 +150,7 @@ final class AppController: ObservableObject {
                     return (url, date)
                 }
                 .sorted { $0.1 > $1.1 }
-                .prefix(6)
+                .prefix(3)
                 .map { url, date in
                     var duration: TimeInterval = 0
                     if let file = try? AVAudioFile(forReading: url) {

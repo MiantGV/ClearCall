@@ -74,9 +74,15 @@ struct MainView: View {
 
     private var recentList: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Recent recordings")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+            HStack {
+                Text("Recent recordings")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Show all") { settings.revealFolder() }
+                    .buttonStyle(.link)
+                    .font(.subheadline)
+            }
             if controller.recent.isEmpty {
                 Text("Your recordings will appear here.")
                     .font(.callout)
