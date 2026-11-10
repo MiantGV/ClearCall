@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             self?.prompts.showSaved(file, source: source) { self?.controller.reveal(file) }
         }
         controller.hidePrompts = { [weak self] in self?.prompts.hide() }
+        controller.showWarning = { [weak self] title, text in self?.prompts.showWarning(title, text) }
         controller.showAlert = { [weak self] title, text, url in self?.showAlert(title, text, settingsURL: url) }
 
         controller.launch()

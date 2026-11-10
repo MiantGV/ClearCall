@@ -2,6 +2,7 @@ import AppKit
 
 let app = NSApplication.shared
 if Updater.runSelfTestIfRequested() { exit(0) }
+if Recorder.runSelfTestIfRequested() { exit(0) }
 if MainActor.assumeIsolated({ PreviewRenderer.runIfRequested() }) { exit(0) }
 let delegate = AppDelegate()
 app.delegate = delegate

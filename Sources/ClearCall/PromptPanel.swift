@@ -27,6 +27,15 @@ final class PromptPanel {
              autoHideAfter: 12)
     }
 
+    func showWarning(_ title: String, _ text: String) {
+        show(PromptCard(icon: "exclamationmark.triangle.fill",
+                        title: title,
+                        subtitle: text,
+                        primary: ("OK", { [weak self] in self?.hide() }),
+                        secondary: nil),
+             autoHideAfter: 120)
+    }
+
     func hide() {
         dismissWork?.cancel()
         dismissWork = nil
@@ -107,7 +116,7 @@ private struct PromptCard: View {
     let title: String
     let subtitle: String
     let primary: (String, () -> Void)
-    let secondary: (String, () -> Void)
+    let secondary: (String, () -> Void)?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -117,7 +126,7 @@ private struct PromptCard: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.headline).lineLimit(1)
-                Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(4).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
             VStack(spacing: 6) {
@@ -125,9 +134,11 @@ private struct PromptCard: View {
                     .buttonStyle(.borderedProminent)
                     .tint(Brand.violet)
                     .controlSize(.regular)
-                Button(secondary.0, action: secondary.1)
-                    .buttonStyle(.borderless)
-                    .font(.caption)
+                if let secondary {
+                    Button(secondary.0, action: secondary.1)
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                }
             }
         }
         .padding(14)

@@ -36,6 +36,7 @@ final class AppController: ObservableObject {
     var showSavedNotice: ((URL, String?) -> Void)?
     var hidePrompts: (() -> Void)?
     var showAlert: ((String, String, String?) -> Void)?
+    var showWarning: ((String, String) -> Void)?
 
     private init() {
         recorder.onLevels = { [weak self] mic, call in
@@ -46,6 +47,7 @@ final class AppController: ObservableObject {
             let combined = max(Self.meter(mic), Self.meter(call))
             self.levelHistory = Array((self.levelHistory + [combined]).suffix(9))
         }
+        recorder.onProblem = { [weak self] title, text in self?.showWarning?(title, text) }
         detector.onCallStarted = { [weak self] call in self?.callStarted(call) }
         detector.onCallEnded = { [weak self] call in self?.callEnded(call) }
         settings.$saveFolder.dropFirst().sink { [weak self] _ in
@@ -56,6 +58,13 @@ final class AppController: ObservableObject {
     func launch() {
         detector.start()
         refreshRecent()
+        // Rescue anything a crash or power loss left behind.
+        recorder.recoverInterrupted(into: settings.saveFolder) { [weak self] recovered in
+            guard let self, let file = recovered.last else { return }
+            self.lastSaved = file
+            self.refreshRecent()
+            self.showSavedNotice?(file, nil)
+        }
     }
 
     // MARK: Recording
@@ -99,9 +108,20 @@ final class AppController: ObservableObject {
         onStateChange?()
         recorder.stop { [weak self] result in
             guard let self, let result else { return }
-            self.lastSaved = result.file
+            guard let file = result.file else {
+                self.showAlert?("The recording couldn't be saved",
+                                "ClearCall couldn't write to your recordings folder or to Documents → Meeting Recordings. The audio is kept safe, and ClearCall will try to save it again the next time it opens.", nil)
+                return
+            }
+            self.lastSaved = file
             self.refreshRecent()
-            if announce { self.showSavedNotice?(result.file, source) }
+            if result.usedFallbackFolder {
+                self.showAlert?("Saved to a different folder",
+                                "ClearCall couldn't write to \(self.settings.saveFolder.path), so this recording was saved in Documents → Meeting Recordings instead.", nil)
+                self.reveal(file)
+            } else if announce {
+                self.showSavedNotice?(file, source)
+            }
             if result.systemAudioWasSilent && result.duration > 5 {
                 self.showAlert?("The call audio was silent",
                                 "Your voice was recorded, but nothing playing on the Mac was. If you were on a call, allow ClearCall in System Settings → Privacy & Security → Screen & System Audio Recording (under \"System Audio Recording Only\"), then quit and reopen ClearCall.",
@@ -114,9 +134,7 @@ final class AppController: ObservableObject {
     func stopForQuit() {
         guard isRecording else { return }
         isRecording = false
-        let done = DispatchSemaphore(value: 0)
-        recorder.stop { _ in done.signal() }
-        _ = done.wait(timeout: .now() + 3)
+        recorder.stopAndWait(timeout: 30)
     }
 
     // MARK: Calls

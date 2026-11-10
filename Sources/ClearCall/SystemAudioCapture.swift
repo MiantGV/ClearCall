@@ -26,7 +26,44 @@ final class SystemAudioCapture {
     private var procID: AudioDeviceIOProcID?
     private let ioQueue = DispatchQueue(label: "clearcall.system-audio", qos: .userInteractive)
 
+    private var handler: ChunkHandler?
+    private var running = false
+    private var outputListener: AudioObjectPropertyListenerBlock?
+    private var outputAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain)
+
     func start(handler: @escaping ChunkHandler) throws {
+        self.handler = handler
+        try build(handler: handler)
+        running = true
+        // Rebuild when the output device changes (headphones plugged in, AirPods connecting).
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self?.restart() }
+        }
+        outputListener = listener
+        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &outputAddress, DispatchQueue.main, listener)
+    }
+
+    /// Rebuilds the capture on the current output device. Main thread.
+    func restart() {
+        guard running, let handler else { return }
+        teardown()
+        do { try build(handler: handler) } catch { NSLog("ClearCall: system audio restart failed: \(error.localizedDescription)") }
+    }
+
+    func stop() {
+        running = false
+        if let outputListener {
+            AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &outputAddress, DispatchQueue.main, outputListener)
+        }
+        outputListener = nil
+        teardown()
+        handler = nil
+    }
+
+    private func build(handler: @escaping ChunkHandler) throws {
         // 1. A global tap of every app's audio (we play nothing ourselves).
         let description = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
         description.uuid = UUID()
@@ -55,7 +92,7 @@ final class SystemAudioCapture {
         var agg = AudioObjectID(kAudioObjectUnknown)
         err = AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &agg)
         guard err == noErr else {
-            stop()
+            teardown()
             throw CaptureError.coreAudio("Creating the capture device", err)
         }
         aggregateID = agg
@@ -69,7 +106,7 @@ final class SystemAudioCapture {
             mElement: kAudioObjectPropertyElementMain)
         err = AudioObjectGetPropertyData(tapID, &address, 0, nil, &size, &asbd)
         guard err == noErr, let format = AVAudioFormat(streamDescription: &asbd) else {
-            stop()
+            teardown()
             throw CaptureError.coreAudio("Reading the system audio format", err)
         }
         let sampleRate = format.sampleRate
@@ -84,17 +121,17 @@ final class SystemAudioCapture {
             handler(mono, sampleRate, host)
         }
         guard err == noErr else {
-            stop()
+            teardown()
             throw CaptureError.coreAudio("Starting system audio capture", err)
         }
         err = AudioDeviceStart(aggregateID, procID)
         guard err == noErr else {
-            stop()
+            teardown()
             throw CaptureError.coreAudio("Starting system audio capture", err)
         }
     }
 
-    func stop() {
+    private func teardown() {
         if aggregateID != AudioObjectID(kAudioObjectUnknown) {
             if let procID {
                 AudioDeviceStop(aggregateID, procID)

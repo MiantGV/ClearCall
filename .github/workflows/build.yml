@@ -76,6 +76,11 @@ jobs:
           OUT=$("$APP_BIN" --verify-update "dist/ClearCall-$VERSION.zip" 99999); echo "$OUT"
           echo "$OUT" | grep -q "REJECTED" || { echo "wrong-version update was accepted"; exit 1; }
 
+      - name: Save and recovery test
+        run: |
+          OUT=$("dist/ClearCall.app/Contents/MacOS/ClearCall" --test-save "$RUNNER_TEMP/savetest"); echo "$OUT"
+          [ "$(echo "$OUT" | grep -c ': OK')" = "3" ] || { echo "save test failed"; exit 1; }
+
       - name: Render window previews
         run: |
           "dist/ClearCall.app/Contents/MacOS/ClearCall" --render-previews "$RUNNER_TEMP/previews"
