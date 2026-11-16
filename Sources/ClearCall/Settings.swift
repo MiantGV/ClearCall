@@ -245,8 +245,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460)
-        .fixedSize()
+        .frame(width: 460, height: 660)      // the list scrolls, so the window fits any screen
     }
 
     private func displayPath(_ url: URL) -> String {
