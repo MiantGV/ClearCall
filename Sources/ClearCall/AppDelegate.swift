@@ -1,4 +1,5 @@
 import AppKit
+import CoreServices
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
@@ -34,7 +35,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             self?.showAlert("ClearCall couldn't update", message)
         }
         updateIcon()
-        showMainWindow()
+        if Self.launchedAtLogin {
+            NSApp.setActivationPolicy(.accessory)      // start quietly in the menu bar
+        } else {
+            showMainWindow()
+        }
+    }
+
+    /// True when macOS opened ClearCall as a login item rather than the user opening it.
+    private static var launchedAtLogin: Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent,
+              event.eventID == AEEventID(kAEOpenApplication) else { return false }
+        return event.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue == OSType(keyAELaunchedAsLogInItem)
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

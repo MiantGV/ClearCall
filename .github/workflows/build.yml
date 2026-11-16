@@ -79,7 +79,7 @@ jobs:
       - name: Save and recovery test
         run: |
           OUT=$("dist/ClearCall.app/Contents/MacOS/ClearCall" --test-save "$RUNNER_TEMP/savetest"); echo "$OUT"
-          [ "$(echo "$OUT" | grep -c ': OK')" = "3" ] || { echo "save test failed"; exit 1; }
+          [ "$(echo "$OUT" | grep -c ': OK')" = "5" ] || { echo "save test failed"; exit 1; }
 
       - name: Render window previews
         run: |

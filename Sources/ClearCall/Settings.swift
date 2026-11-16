@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 /// Stored preferences.
@@ -9,6 +10,40 @@ final class AppSettings: ObservableObject {
     @Published var saveFolder: URL {
         didSet { defaults.set(saveFolder.path, forKey: "saveFolder") }
     }
+    // Splitting long recordings into parts.
+    @Published var splitRecordings: Bool {
+        didSet { defaults.set(splitRecordings, forKey: "splitRecordings") }
+    }
+    @Published var splitMinutes: Int {
+        didSet {
+            if splitMinutes < 1 { splitMinutes = 1 }
+            if splitMinutes > 600 { splitMinutes = 600 }
+            defaults.set(splitMinutes, forKey: "splitMinutes")
+        }
+    }
+    @Published var keepFullRecording: Bool {
+        didSet { defaults.set(keepFullRecording, forKey: "keepFullRecording") }
+    }
+    var splitOptions: SplitOptions? {
+        splitRecordings ? SplitOptions(seconds: Double(splitMinutes) * 60, keepFull: keepFullRecording) : nil
+    }
+
+    /// Whether macOS opens ClearCall when you log in. macOS holds this setting, not ClearCall.
+    @Published var openAtLogin: Bool {
+        didSet {
+            guard openAtLogin != (SMAppService.mainApp.status == .enabled) else { return }
+            do {
+                if openAtLogin { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+                loginItemError = nil
+            } catch {
+                loginItemError = "macOS didn't accept the change: \(error.localizedDescription)"
+            }
+            let actual = SMAppService.mainApp.status == .enabled
+            if openAtLogin != actual { openAtLogin = actual }
+        }
+    }
+    @Published var loginItemError: String? = nil
+
     @Published var keepTestTracks: Bool {
         didSet { defaults.set(keepTestTracks, forKey: "keepTestTracks") }
     }
@@ -49,6 +84,10 @@ final class AppSettings: ObservableObject {
             saveFolder = Self.defaultFolder
         }
         keepTestTracks = defaults.bool(forKey: "keepTestTracks")
+        splitRecordings = defaults.bool(forKey: "splitRecordings")
+        splitMinutes = defaults.object(forKey: "splitMinutes") as? Int ?? 25
+        keepFullRecording = defaults.object(forKey: "keepFullRecording") as? Bool ?? true
+        openAtLogin = SMAppService.mainApp.status == .enabled
         echoCancellation = defaults.object(forKey: "echoCancellation") as? Bool ?? true
         callStartAction = CallStartAction(rawValue: defaults.string(forKey: "callStartAction") ?? "") ?? .ask
         stopWhenCallEnds = defaults.object(forKey: "stopWhenCallEnds") as? Bool ?? true
@@ -140,6 +179,26 @@ struct SettingsView: View {
                     }
                 }
             }
+            Section("Long recordings") {
+                Toggle("Split recordings into parts", isOn: $settings.splitRecordings)
+                HStack {
+                    Text("Part length")
+                    Spacer()
+                    TextField("", value: $settings.splitMinutes, format: .number)
+                        .labelsHidden()
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 56)
+                    Text("minutes")
+                    Stepper("", onIncrement: { settings.splitMinutes += 5 }, onDecrement: { settings.splitMinutes -= 5 })
+                        .labelsHidden()
+                }
+                .disabled(!settings.splitRecordings)
+                Toggle("Also keep the complete recording", isOn: $settings.keepFullRecording)
+                    .disabled(!settings.splitRecordings)
+                Text("Each part ends at the first natural pause after the chosen length, so no word is cut in half. Recordings shorter than one part are saved as a single file.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section("Calls") {
                 Picker("When a call starts", selection: $settings.callStartAction) {
                     ForEach(AppSettings.CallStartAction.allCases) { Text($0.label).tag($0) }
@@ -174,6 +233,12 @@ struct SettingsView: View {
                 Text("For tuning only. Saves your raw microphone, the cleaned microphone and the call audio as separate files in a folder next to the recording.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+            Section {
+                Toggle("Open ClearCall when I log in", isOn: $settings.openAtLogin)
+                Text(settings.loginItemError ?? "Starts quietly in the menu bar, so calls are always detected.")
+                    .font(.caption)
+                    .foregroundStyle(settings.loginItemError == nil ? Color.secondary : Color.red)
             }
             Section("Updates") {
                 UpdateRow()

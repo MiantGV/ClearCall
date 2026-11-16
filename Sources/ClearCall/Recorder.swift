@@ -11,6 +11,22 @@ final class PassthroughCanceller: EchoCanceller {
     func process(mic: inout [Float], reference: [Float]) {}
 }
 
+/// Splitting a long recording into parts, cut at natural pauses.
+struct SplitOptions: Equatable {
+    /// Target length of each part. A part ends at the first pause after this.
+    let seconds: Double
+    /// Also save the whole recording as one file.
+    let keepFull: Bool
+}
+
+/// What `Recorder.finalize` managed to save.
+struct SavedFiles {
+    /// The complete recording if it was kept, otherwise the first part. nil if saving failed.
+    var primary: URL?
+    var all: [URL] = []
+    var usedFallback = false
+}
+
 struct RecordingResult {
     /// nil if the recording couldn't be saved anywhere (the raw audio is kept for the next launch).
     let file: URL?
@@ -18,6 +34,8 @@ struct RecordingResult {
     let systemAudioWasSilent: Bool
     /// true if the chosen folder couldn't be written and the default folder was used instead.
     let usedFallbackFolder: Bool
+    /// Number of files saved (more than 1 when the recording was split into parts).
+    let fileCount: Int
 }
 
 /// Records the microphone and the Mac's audio into one file.
@@ -43,6 +61,7 @@ final class Recorder {
     private var rawURL: URL?
     private var recordingName = ""
     private var destination: URL?
+    private var split: SplitOptions?
     private var writeFailed = false
     private var testFiles: (micRaw: AVAudioFile, micClean: AVAudioFile, system: AVAudioFile)?
     private var systemPeak: Float = 0
@@ -70,7 +89,7 @@ final class Recorder {
             .appendingPathComponent("ClearCall/InProgress", isDirectory: true)
     }
 
-    func start(in folder: URL, keepTestTracks: Bool, echoCancellation: Bool) throws {
+    func start(in folder: URL, keepTestTracks: Bool, echoCancellation: Bool, split: SplitOptions?) throws {
         guard !isRecording else { return }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
@@ -111,6 +130,7 @@ final class Recorder {
             rawURL = raw
             recordingName = name
             destination = folder
+            self.split = split
             writeFailed = false
             testFiles = tests.map { (micRaw: $0.0, micClean: $0.1, system: $0.2) }
             systemPeak = 0
@@ -174,22 +194,24 @@ final class Recorder {
             let raw = rawURL
             let name = recordingName
             let folders = Self.saveFolders(destination)
+            let split = self.split
             rawURL = nil
             // Converting can take a few seconds for a long call; keep it off the recording queue.
             finishQueue.async {
-                var saved: (URL?, Bool) = (nil, false)
-                if let raw { saved = Self.finalize(raw: raw, name: name, folders: folders) }
+                var saved = SavedFiles()
+                if let raw { saved = Self.finalize(raw: raw, name: name, folders: folders, split: split) }
                 finished?()
                 DispatchQueue.main.async {
-                    completion(RecordingResult(file: saved.0, duration: duration,
-                                               systemAudioWasSilent: silent, usedFallbackFolder: saved.1))
+                    completion(RecordingResult(file: saved.primary, duration: duration,
+                                               systemAudioWasSilent: silent, usedFallbackFolder: saved.usedFallback,
+                                               fileCount: saved.all.count))
                 }
             }
         }
     }
 
     /// Converts recordings left behind by a crash or power loss. Call at launch (main thread).
-    func recoverInterrupted(into folder: URL, completion: @escaping ([URL]) -> Void) {
+    func recoverInterrupted(into folder: URL, split: SplitOptions?, completion: @escaping ([URL]) -> Void) {
         guard !isRecording else { completion([]); return }
         let all = (try? FileManager.default.contentsOfDirectory(at: Self.inProgressFolder, includingPropertiesForKeys: [.fileSizeKey])) ?? []
         let leftovers = all.filter { $0.pathExtension == "pcm" }
@@ -203,7 +225,7 @@ final class Recorder {
                     continue
                 }
                 let name = raw.deletingPathExtension().lastPathComponent + " (recovered)"
-                if let url = Self.finalize(raw: raw, name: name, folders: Self.saveFolders(folder)).0 {
+                if let url = Self.finalize(raw: raw, name: name, folders: Self.saveFolders(folder), split: split).primary {
                     recovered.append(url)
                 }
             }
@@ -357,42 +379,81 @@ final class Recorder {
         return folders
     }
 
-    /// Converts the working file to M4A (locally), then moves it into the first folder that accepts it.
-    /// Returns the saved file and whether the fallback folder had to be used. The working file is
-    /// only deleted once the M4A is safely in place.
-    static func finalize(raw: URL, name: String, folders: [URL]) -> (URL?, Bool) {
-        let local = raw.deletingPathExtension().appendingPathExtension("m4a")
-        try? FileManager.default.removeItem(at: local)
+    /// Converts the working file to M4A (locally), then moves the result into the first folder that accepts it.
+    /// With `split`, a recording longer than one part is also (or instead) saved as parts cut at natural pauses.
+    /// Every file is encoded once, straight from the uncompressed audio. The working file is only deleted
+    /// once everything is safely in place.
+    static func finalize(raw: URL, name: String, folders: [URL], split: SplitOptions? = nil) -> SavedFiles {
+        let work = raw.deletingLastPathComponent()
+        let stem = raw.deletingPathExtension().lastPathComponent
+        var pending: [(local: URL, name: String)] = []
         do {
-            try convert(raw: raw, to: local)
+            var cuts: [Int64] = []
+            if let split { cuts = try findCuts(raw: raw, segmentSeconds: split.seconds) }
+            if cuts.isEmpty || split?.keepFull == true {
+                let local = work.appendingPathComponent("\(stem).m4a")
+                try? FileManager.default.removeItem(at: local)
+                pending.append((local, name))
+                try convert(raw: raw, to: local, startFrame: 0, endFrame: nil)
+            }
+            if !cuts.isEmpty {
+                let starts = [0] + cuts
+                for (index, start) in starts.enumerated() {
+                    let end: Int64? = index + 1 < starts.count ? starts[index + 1] : nil
+                    let label = "part " + String(format: "%02d", index + 1)
+                    let local = work.appendingPathComponent("\(stem) \(label).m4a")
+                    try? FileManager.default.removeItem(at: local)
+                    pending.append((local, "\(name) \(label)"))
+                    try convert(raw: raw, to: local, startFrame: start, endFrame: end)
+                }
+            }
         } catch {
             NSLog("ClearCall: converting \(raw.lastPathComponent) failed: \(error)")
-            return (nil, false)
+            for item in pending { try? FileManager.default.removeItem(at: item.local) }
+            return SavedFiles()
         }
-        for (index, folder) in folders.enumerated() {
-            do {
-                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                let url = uniqueURL(in: folder, name: name, ext: "m4a")
-                try FileManager.default.moveItem(at: local, to: url)
-                try? FileManager.default.removeItem(at: raw)
-                return (url, index > 0)
-            } catch {
-                NSLog("ClearCall: saving into \(folder.path) failed: \(error)")
+
+        var saved = SavedFiles()
+        for (index, folder) in folders.enumerated() where !pending.isEmpty {
+            guard (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil else {
+                NSLog("ClearCall: can't use \(folder.path)")
+                continue
             }
+            var remaining: [(local: URL, name: String)] = []
+            for item in pending {
+                let url = uniqueURL(in: folder, name: item.name, ext: "m4a")
+                do {
+                    try FileManager.default.moveItem(at: item.local, to: url)
+                    saved.all.append(url)
+                    if index > 0 { saved.usedFallback = true }
+                } catch {
+                    NSLog("ClearCall: saving into \(folder.path) failed: \(error)")
+                    remaining.append(item)
+                }
+            }
+            pending = remaining
         }
-        return (nil, false)
+        if pending.isEmpty {
+            try? FileManager.default.removeItem(at: raw)
+            saved.primary = saved.all.first
+        }
+        return saved
     }
 
-    private static func convert(raw: URL, to m4a: URL) throws {
+    /// Encodes frames [startFrame, endFrame) of the working file (to the end if `endFrame` is nil).
+    private static func convert(raw: URL, to m4a: URL, startFrame: Int64, endFrame: Int64?) throws {
         let input = try FileHandle(forReadingFrom: raw)
         defer { try? input.close() }
+        try input.seek(toOffset: UInt64(max(0, startFrame)) * 2)
         let output = try makeAACFile(m4a)
         let chunkFrames = 48_000
         guard let buffer = AVAudioPCMBuffer(pcmFormat: output.processingFormat, frameCapacity: AVAudioFrameCount(chunkFrames)) else {
             throw CaptureError.message("Couldn't prepare the audio file.")
         }
-        while true {
-            guard let data = try input.read(upToCount: chunkFrames * 2), data.count >= 2 else { break }
+        var left: Int64 = endFrame.map { $0 - startFrame } ?? Int64.max
+        while left > 0 {
+            let want = Int(min(Int64(chunkFrames), left))
+            guard let data = try input.read(upToCount: want * 2), data.count >= 2 else { break }
             let frames = data.count / 2
             let dst = buffer.floatChannelData![0]
             data.withUnsafeBytes { bytes in
@@ -402,7 +463,78 @@ final class Recorder {
             }
             buffer.frameLength = AVAudioFrameCount(frames)
             try output.write(from: buffer)
+            left -= Int64(frames)
         }
+    }
+
+    /// Where to cut a recording into parts of about `segmentSeconds`: the middle of the first pause
+    /// (0.5 s quieter than -35 dB) after each interval. If nobody pauses for a minute after the mark,
+    /// the quietest half-second in that minute is used instead. A short leftover isn't split off.
+    static func findCuts(raw: URL, segmentSeconds: Double) throws -> [Int64] {
+        let rate = Pipeline.sampleRate
+        let window = 960                                   // 20 ms
+        let quietWindows = 25                              // 0.5 s
+        let thresholdRMS = pow(10, -35.0 / 20) * 32768
+        let thresholdEnergy = thresholdRMS * thresholdRMS * Double(window)
+        let step = Int64(segmentSeconds * rate)
+        guard step > 0 else { return [] }
+        let fallback = Int64(min(60, segmentSeconds) * rate)
+        let minTail = Int64(min(60, segmentSeconds * 0.2) * rate)
+        let half = Int64(quietWindows * window / 2)
+
+        let input = try FileHandle(forReadingFrom: raw)
+        defer { try? input.close() }
+        var cuts: [Int64] = []
+        var last: Int64 = 0
+        var pos: Int64 = 0
+        var quietRun = 0
+        var recent = [Double](repeating: 0, count: quietWindows)
+        var recentIndex = 0
+        var recentSum = 0.0
+        var filled = 0
+        var bestSum = Double.infinity
+        var bestCenter: Int64 = 0
+
+        while true {
+            guard let data = try input.read(upToCount: window * 2 * 500), data.count >= window * 2 else { break }
+            let windows = data.count / (window * 2)
+            data.withUnsafeBytes { bytes in
+                for w in 0..<windows {
+                    var energy = 0.0
+                    let base = w * window * 2
+                    for i in 0..<window {
+                        let sample = Double(bytes.loadUnaligned(fromByteOffset: base + i * 2, as: Int16.self))
+                        energy += sample * sample
+                    }
+                    pos += Int64(window)
+                    quietRun = energy < thresholdEnergy ? quietRun + 1 : 0
+                    recentSum += energy - recent[recentIndex]
+                    recent[recentIndex] = energy
+                    recentIndex = (recentIndex + 1) % quietWindows
+                    filled = min(filled + 1, quietWindows)
+
+                    let center = pos - half
+                    guard center >= last + step else { continue }
+                    if filled == quietWindows, recentSum < bestSum {
+                        bestSum = recentSum
+                        bestCenter = center
+                    }
+                    var cut: Int64?
+                    if quietRun >= quietWindows {
+                        cut = center
+                    } else if center >= last + step + fallback, bestSum.isFinite {
+                        cut = bestCenter
+                    }
+                    if let cut {
+                        cuts.append(cut)
+                        last = cut
+                        bestSum = .infinity
+                    }
+                }
+            }
+        }
+        let total = pos
+        return cuts.filter { total - $0 >= minTail }
     }
 
     /// `ClearCall --test-save <folder>`: build-time check that a working file converts and lands in a folder,
@@ -429,19 +561,48 @@ final class Recorder {
 
         let first = makeRaw("one", seconds: 3)
         let a = finalize(raw: first, name: "Test", folders: [good])
-        let aOK = abs(seconds(a.0) - 3) < 0.2 && !a.1 && !FileManager.default.fileExists(atPath: first.path)
-        print("SAVE-CHECK normal: \(aOK ? "OK" : "FAILED") (\(seconds(a.0)) s)")
+        let aOK = abs(seconds(a.primary) - 3) < 0.2 && !a.usedFallback && !FileManager.default.fileExists(atPath: first.path)
+        print("SAVE-CHECK normal: \(aOK ? "OK" : "FAILED") (\(seconds(a.primary)) s)")
 
         let second = makeRaw("two", seconds: 2)
         let blocked = URL(fileURLWithPath: "/System/ClearCallCannotWriteHere", isDirectory: true)
         let b = finalize(raw: second, name: "Test", folders: [blocked, good])
-        let bOK = abs(seconds(b.0) - 2) < 0.2 && b.1
-        print("SAVE-CHECK fallback: \(bOK ? "OK" : "FAILED") (\(seconds(b.0)) s)")
+        let bOK = abs(seconds(b.primary) - 2) < 0.2 && b.usedFallback
+        print("SAVE-CHECK fallback: \(bOK ? "OK" : "FAILED") (\(seconds(b.primary)) s)")
 
         let third = makeRaw("three", seconds: 1)
         let c = finalize(raw: third, name: "Test", folders: [blocked])
-        let cOK = c.0 == nil && FileManager.default.fileExists(atPath: third.path)
+        let cOK = c.primary == nil && FileManager.default.fileExists(atPath: third.path)
         print("SAVE-CHECK nowhere-to-save keeps the audio: \(cOK ? "OK" : "FAILED")")
+
+        // Splitting: 100 s of "speech" (9 s of tone, then a 1 s pause, repeated), parts of about 30 s.
+        func makeSpeech(_ name: String, pauses: Bool) -> URL {
+            var pcm = [Int16](repeating: 0, count: 48_000 * 100)
+            for n in 0..<pcm.count where !(pauses && (n / 48_000) % 10 == 9) {
+                pcm[n] = Int16(8000 * sin(2 * Double.pi * 440 * Double(n) / 48_000))
+            }
+            let url = work.appendingPathComponent(name + ".pcm")
+            try? pcm.withUnsafeBufferPointer { Data(buffer: $0) }.write(to: url)
+            return url
+        }
+        let splitDir = dir.appendingPathComponent("split", isDirectory: true)
+        let speech = makeSpeech("speech", pauses: true)
+        let cuts = ((try? findCuts(raw: speech, segmentSeconds: 30)) ?? []).map { Double($0) / 48_000 }
+        // Each cut must fall inside a pause (seconds 9–10 of each 10 s block) and parts must be at least 30 s.
+        let inPauses = cuts.allSatisfy { $0.truncatingRemainder(dividingBy: 10) >= 9 }
+        let spaced = zip([0] + cuts, cuts).allSatisfy { $1 - $0 >= 30 }
+        let d = finalize(raw: speech, name: "Split", folders: [splitDir], split: SplitOptions(seconds: 30, keepFull: true))
+        let lengths = d.all.map { seconds($0) }
+        let partsTotal = lengths.dropFirst().reduce(0, +)
+        let fullOK = d.all.count == 4 && abs(lengths[0] - 100) < 0.3      // the complete file plus 3 parts
+        let dOK = cuts.count == 2 && inPauses && spaced && fullOK && abs(partsTotal - 100) < 0.5
+        print("SAVE-CHECK split at pauses: \(dOK ? "OK" : "FAILED") cuts \(cuts) lengths \(lengths)")
+
+        let dense = makeSpeech("dense", pauses: false)
+        let e = finalize(raw: dense, name: "Dense", folders: [splitDir], split: SplitOptions(seconds: 30, keepFull: false))
+        let eLengths = e.all.map { seconds($0) }
+        let eOK = e.all.count >= 2 && abs(eLengths.reduce(0, +) - 100) < 0.5 && eLengths.allSatisfy { $0 >= 6 }
+        print("SAVE-CHECK split without pauses: \(eOK ? "OK" : "FAILED") lengths \(eLengths)")
         return true
     }
 

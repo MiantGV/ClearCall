@@ -59,7 +59,7 @@ final class AppController: ObservableObject {
         detector.start()
         refreshRecent()
         // Rescue anything a crash or power loss left behind.
-        recorder.recoverInterrupted(into: settings.saveFolder) { [weak self] recovered in
+        recorder.recoverInterrupted(into: settings.saveFolder, split: settings.splitOptions) { [weak self] recovered in
             guard let self, let file = recovered.last else { return }
             self.lastSaved = file
             self.refreshRecent()
@@ -84,7 +84,8 @@ final class AppController: ObservableObject {
             do {
                 try self.recorder.start(in: self.settings.saveFolder,
                                         keepTestTracks: self.settings.keepTestTracks,
-                                        echoCancellation: self.settings.echoCancellation)
+                                        echoCancellation: self.settings.echoCancellation,
+                                        split: self.settings.splitOptions)
                 self.isRecording = true
                 self.startedAt = Date()
                 self.recordingSource = source ?? self.activeCall?.appName
